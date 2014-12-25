@@ -33,6 +33,11 @@ distribution.
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <math.h>
+
+#include "ds3wiibt.h"
+#include "ds4wiibt.h"
+#define RAD_TO_DEG (57.2957795131)
 
 #include "asm.h"
 #include "processor.h"
@@ -114,6 +119,24 @@ static sys_resetinfo __wpad_resetinfo = {
 	__wpad_onreset,
 	127
 };
+
+static struct bd_addr ds4_addr = {.addr = {0xC5, 0x18, 0x2A, 0x6D, 0x66, 0x1C}};
+static struct bd_addr ds3_addr = {.addr = {0x5C, 0x97, 0x4F, 0xF7, 0x06, 0x00}};
+
+#define DS4_DEADZONE 20
+#define DS3_DEADZONE 40
+static struct ds4wiibt_context ds4;
+static struct ds3wiibt_context ds3;
+
+void discon_cb_ds4(void *usrdata)
+{
+	ds4wiibt_listen(&ds4); //Listen again
+}
+
+void discon_cb_ds3(void *usrdata)
+{
+	ds3wiibt_listen(&ds3); //Listen again
+}
 
 static s32 __wpad_onreset(s32 final)
 {
@@ -727,6 +750,17 @@ s32 WPAD_Init()
 		tb.tv_nsec = 0;
 		SYS_SetPeriodicAlarm(__wpad_timer,&tb,&tb,__wpad_timeouthandler,NULL);
 		__wpads_inited = WPAD_STATE_ENABLING;
+
+		ds4wiibt_initialize(&ds4, &ds4_addr);
+		ds4wiibt_set_userdata(&ds4, NULL);
+		ds4wiibt_set_disconnect_cb(&ds4, discon_cb_ds4);
+		ds4wiibt_listen(&ds4);
+
+		ds3wiibt_initialize(&ds3, &ds3_addr);
+		ds3wiibt_set_userdata(&ds3, NULL);
+		ds3wiibt_set_disconnect_cb(&ds3, discon_cb_ds3);
+		ds3wiibt_listen(&ds3);
+		
 	}
 	_CPU_ISR_Restore(level);
 	return WPAD_ERR_NONE;
@@ -856,6 +890,54 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 		return count;
 	}
 
+	u32 ds4_btns = 0;
+
+	if (ds4wiibt_is_connected(&ds4)) {
+		
+		uint8_t up    = (ds4.input.dpad == 7 || ds4.input.dpad == 0 || ds4.input.dpad == 1);
+		uint8_t down  = (ds4.input.dpad == 3 || ds4.input.dpad == 4 || ds4.input.dpad == 5);
+		uint8_t right = (ds4.input.dpad == 1 || ds4.input.dpad == 2 || ds4.input.dpad == 3);
+		uint8_t left  = (ds4.input.dpad == 7 || ds4.input.dpad == 6 || ds4.input.dpad == 5);
+
+		if ((wpaddata[chan].data_present & WPAD_DATA_EXPANSION) && (wpaddata[chan].exp.type == EXP_CLASSIC)) {
+			ds4_btns |= up    ? WPAD_CLASSIC_BUTTON_UP	  : 0;
+			ds4_btns |= down  ? WPAD_CLASSIC_BUTTON_DOWN  : 0;
+			ds4_btns |= right ? WPAD_CLASSIC_BUTTON_RIGHT : 0;
+			ds4_btns |= left  ? WPAD_CLASSIC_BUTTON_LEFT  : 0;
+
+			ds4_btns |= ds4.input.circle   ? WPAD_CLASSIC_BUTTON_A : 0;
+			ds4_btns |= ds4.input.cross    ? WPAD_CLASSIC_BUTTON_B : 0;
+			ds4_btns |= ds4.input.triangle ? WPAD_CLASSIC_BUTTON_X : 0;
+			ds4_btns |= ds4.input.square   ? WPAD_CLASSIC_BUTTON_Y : 0;
+
+			ds4_btns |= ds4.input.L1 ? WPAD_CLASSIC_BUTTON_FULL_L : 0;
+			ds4_btns |= ds4.input.R1 ? WPAD_CLASSIC_BUTTON_FULL_R : 0;
+			ds4_btns |= ds4.input.L2 ? WPAD_CLASSIC_BUTTON_ZL : 0;
+			ds4_btns |= ds4.input.R2 ? WPAD_CLASSIC_BUTTON_ZR : 0;
+
+			ds4_btns |= ds4.input.PS ? WPAD_CLASSIC_BUTTON_HOME : 0;
+			ds4_btns |= ds4.input.OPTIONS ? WPAD_CLASSIC_BUTTON_PLUS : 0;
+			ds4_btns |= ds4.input.SHARE ? WPAD_CLASSIC_BUTTON_MINUS : 0;
+		} else {
+			ds4_btns |= up    ? WPAD_BUTTON_UP	  : 0;
+			ds4_btns |= down  ? WPAD_BUTTON_DOWN  : 0;
+			ds4_btns |= right ? WPAD_BUTTON_RIGHT : 0;
+			ds4_btns |= left  ? WPAD_BUTTON_LEFT  : 0;
+
+			ds4_btns |= ds4.input.circle   ? WPAD_BUTTON_B : 0;
+			ds4_btns |= (ds4.input.cross || ds4.input.TPAD) ? WPAD_BUTTON_A : 0;
+			ds4_btns |= ds4.input.triangle ? WPAD_BUTTON_1 : 0;
+			ds4_btns |= ds4.input.square   ? WPAD_BUTTON_2 : 0;
+
+			ds4_btns |= (ds4.input.R1 || ds4.input.L1) ? WPAD_NUNCHUK_BUTTON_C : 0;
+			ds4_btns |= (ds4.input.R2 || ds4.input.L2) ? WPAD_NUNCHUK_BUTTON_Z : 0;
+
+			ds4_btns |= ds4.input.PS ? WPAD_BUTTON_HOME : 0;
+			ds4_btns |= ds4.input.OPTIONS ? WPAD_CLASSIC_BUTTON_PLUS : 0;
+			ds4_btns |= ds4.input.SHARE ? WPAD_CLASSIC_BUTTON_MINUS : 0;
+		}
+	}
+
 	btns_p = btns_nh = btns_l = wpaddata[chan].btns_h;
 	while(1) {
 		ret = WPAD_ReadEvent(chan,&wpaddata[chan]);
@@ -866,7 +948,9 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 		// we ignore everything except _h, since we have our
 		// own "fake" _l and everything gets recalculated at
 		// the end of the function
+		
 		btns_h = wpaddata[chan].btns_h;
+		btns_h |= ds4_btns;
 
 		/* Button event coalescing:
 		 * What we're doing here is get the very first button event
@@ -891,6 +975,50 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 
 		count++;
 	}
+	
+	if (ds4wiibt_is_connected(&ds4)) {
+		if (ds4.input.finger1.active) {
+			wpaddata[chan].ir.x = (ds4.input.finger1.X/1920.0)*wpaddata[chan].ir.vres[0];
+			wpaddata[chan].ir.y = (ds4.input.finger1.Y/900.0)*wpaddata[chan].ir.vres[1];
+			wpaddata[chan].ir.valid = 1;
+		}
+		wpaddata[chan].orient.pitch = ds4.input.pitch;
+		wpaddata[chan].orient.roll  = ds4.input.roll;
+		wpaddata[chan].orient.yaw   = ds4.input.yaw;
+		
+		wpaddata[chan].accel.x = ds4.input.accelX;
+		wpaddata[chan].accel.y = ds4.input.accelY;
+		wpaddata[chan].accel.z = ds4.input.accelZ;
+
+		int8_t lX = ds4.input.leftX - 128;
+		int8_t lY = ds4.input.leftY - 128;
+		int8_t rX = ds4.input.rightX - 128;
+		int8_t rY = ds4.input.rightY - 128;
+
+		float lMag = sqrtf(lX*lX + lY*lY)/128.0;
+		float rMag = sqrtf(rX*rX + rY*rY)/128.0;
+
+		float lAng = atan2(lY, lX)*RAD_TO_DEG + 90.0;
+		float rAng = atan2(rY, rX)*RAD_TO_DEG + 90.0;
+
+		if (wpaddata[chan].data_present & WPAD_DATA_EXPANSION) {
+			switch (wpaddata[chan].exp.type) {
+			case EXP_NUNCHUK:
+			case EXP_GUITAR_HERO_3:
+				wpaddata[chan].exp.nunchuk.js.mag = lMag;
+				wpaddata[chan].exp.nunchuk.js.ang = lAng;
+				break;
+			case EXP_CLASSIC:
+				wpaddata[chan].exp.classic.ljs.mag = lMag;
+				wpaddata[chan].exp.classic.ljs.ang = lAng;
+				wpaddata[chan].exp.classic.rjs.mag = rMag;
+				wpaddata[chan].exp.classic.rjs.ang = rAng;
+				break;
+				
+			}
+		}
+	}
+	
 	wpaddata[chan].btns_h = btns_nh;
 	wpaddata[chan].btns_l = btns_l;
 	wpaddata[chan].btns_d = btns_nh & ~btns_l;
@@ -1118,6 +1246,8 @@ void WPAD_Shutdown()
 
 	_CPU_ISR_Disable(level);
 
+	ds4wiibt_disconnect(&ds4);
+	
 	__wpads_inited = WPAD_STATE_DISABLED;
 	SYS_RemoveAlarm(__wpad_timer);
 	for(i=0;i<WPAD_MAX_WIIMOTES;i++) {
@@ -1172,8 +1302,12 @@ s32 WPAD_Rumble(s32 chan, int status)
 		return WPAD_ERR_NOT_READY;
 	}
 
-	if(__wpads[chan]!=NULL)
+	if(__wpads[chan]!=NULL) {
 		wiiuse_rumble(__wpads[chan],status);
+		//ds4wiibt_set_rumble(&ds4, 0x50, 0x20);
+		//ds4wiibt_send_ledsrumble(&ds4);
+		//ds4wiibt_set_rumble(&ds4, 0x00, 0x00);
+	}
 
 	_CPU_ISR_Restore(level);
 	return WPAD_ERR_NONE;

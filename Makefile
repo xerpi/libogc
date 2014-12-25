@@ -82,7 +82,8 @@ INCLUDES	:=	$(DEFINCS) -I$(BASEDIR)/gc/netif -I$(BASEDIR)/gc/ipv4 \
 				-I$(BASEDIR)/gc/modplay \
 				-I$(BASEDIR)/gc/bte \
 				-I$(BASEDIR)/gc/sdcard -I$(BASEDIR)/gc/wiiuse \
-				-I$(BASEDIR)/gc/di
+				-I$(BASEDIR)/gc/di \
+				-I$(BASEDIR)/lwbt
 
 MACHDEP		:= -DBIGENDIAN -DGEKKO -mcpu=750 -meabi -msdata=eabi -mhard-float -fmodulo-sched -ffunction-sections -fdata-sections
 
@@ -167,7 +168,8 @@ BTEOBJ		:=	bte.o hci.o l2cap.o btmemb.o btmemr.o btpbuf.o physbusif.o
 
 #---------------------------------------------------------------------------------
 WIIUSEOBJ	:=	classic.o dynamics.o events.o guitar_hero_3.o io.o io_wii.o ir.o \
-				nunchuk.o wiiboard.o wiiuse.o speaker.o wpad.o motion_plus.o
+				nunchuk.o wiiboard.o wiiuse.o speaker.o wpad.o motion_plus.o \
+				ds3wiibt.o ds4wiibt.o
 
 #---------------------------------------------------------------------------------
 TINYSMBOBJ	:=	des.o md4.o ntlm.o smb.o smb_devoptab.o

@@ -166,7 +166,7 @@ static s32 __usbv5_attachfinishCB(s32 result, void *p)
 	_usb_cb_list *list;
 	struct _usbv5_host* host = (struct _usbv5_host*)p;
 	if(host==NULL) return IPC_EINVAL;
-
+	
 	/* the callback functions may attempt to set a new notify func,
 	 * device_change_notify is set to NULL *before* calling it to
 	 * avoid wiping out the new functions
@@ -180,8 +180,9 @@ static s32 __usbv5_attachfinishCB(s32 result, void *p)
 		list = next;
 	}
 
-	if (result==0)
+	if (result==0) {
 		IOS_IoctlAsync(host->fd, USBV5_IOCTL_GETDEVICECHANGE, NULL, 0, host->attached_devices, 0x180, __usbv5_devicechangeCB, host);
+	}
 
 	return IPC_OK;
 }
@@ -190,6 +191,8 @@ static s32 __usbv5_devicechangeCB(s32 result, void *p)
 {
 	int i, j;
 	struct _usbv5_host* host = (struct _usbv5_host*)p;
+
+	//printf("devicechangeCB: result: %d\n", result);
 
 	if(host==NULL) return IPC_EINVAL;
 
@@ -211,7 +214,6 @@ static s32 __usbv5_devicechangeCB(s32 result, void *p)
 		}
 		// wipe unused device entries
 		memset(host->attached_devices+result, 0, sizeof(usb_device_entry)*(32-result));
-
 		IOS_IoctlAsync(host->fd, USBV5_IOCTL_ATTACHFINISH, NULL, 0, NULL, 0, __usbv5_attachfinishCB, host);
 	}
 
@@ -223,12 +225,10 @@ static s32 add_devicechange_cb(_usb_cb_list **list, usbcallback cb, void *userda
 	_usb_cb_list *new_cb = (_usb_cb_list*)iosAlloc(hId, sizeof(_usb_cb_list));
 	if (new_cb==NULL)
 		return IPC_ENOMEM;
-
 	new_cb->cb = cb;
 	new_cb->userdata = userdata;
 	new_cb->next = *list;
 	*list = new_cb;
-
 	return IPC_OK;
 }
 
@@ -634,8 +634,9 @@ s32 USB_Initialize()
 				IOS_Close(hid_fd);
 				iosFree(hId, hid_host);
 				hid_host = NULL;
-			} else
+			} else {
 				IOS_IoctlAsync(hid_fd, USBV5_IOCTL_GETDEVICECHANGE, NULL, 0, hid_host->attached_devices, 0x180, __usbv5_devicechangeCB, hid_host);
+			}
 
 			iosFree(hId, hid_ver);
 		}
@@ -1343,8 +1344,9 @@ s32 USB_DeviceChangeNotifyAsync(u8 interface_class, usbcallback cb, void* userda
 	else if (interface_class != USB_CLASS_HID && ven_host)
 		ret = add_devicechange_cb(&ven_host->device_change_notify, cb, userdata);
 
-	else if (interface_class==USB_CLASS_HID && hid_host)
+	else if (interface_class==USB_CLASS_HID && hid_host) {
 		ret = add_devicechange_cb(&hid_host->device_change_notify, cb, userdata);
+	}
 
 
 	return ret;
