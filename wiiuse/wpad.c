@@ -120,8 +120,10 @@ static sys_resetinfo __wpad_resetinfo = {
 	127
 };
 
-static struct bd_addr ds4_addr = {.addr = {0xC5, 0x18, 0x2A, 0x6D, 0x66, 0x1C}};
-static struct bd_addr ds3_addr = {.addr = {0x5C, 0x97, 0x4F, 0xF7, 0x06, 0x00}};
+static const char ds3_conf_file[] ATTRIBUTE_ALIGN(32) = "/shared2/sys/ds3wiibt.dat";
+static const char ds4_conf_file[] ATTRIBUTE_ALIGN(32) = "/shared2/sys/ds4wiibt.dat";
+static struct bd_addr ds4_addr ATTRIBUTE_ALIGN(32); //= {.addr = {0xC5, 0x18, 0x2A, 0x6D, 0x66, 0x1C}};
+static struct bd_addr ds3_addr ATTRIBUTE_ALIGN(32); //= {.addr = {0x5C, 0x97, 0x4F, 0xF7, 0x06, 0x00}};
 
 #define DS4_DEADZONE 20
 #define DS3_DEADZONE 40
@@ -675,6 +677,28 @@ void __wpad_disconnectCB(struct bd_addr *offaddr, u8 reason)
 	}
 }
 
+static int read_mac_config(const char *conf_file, u8 *mac)
+{
+	ISFS_Initialize();
+	int fd = ISFS_Open(conf_file, ISFS_OPEN_RW);
+	if (fd < 0) {
+		ISFS_Deinitialize();
+		return -1;
+	}
+	ISFS_Seek(fd, 0, SEEK_SET);
+	int n = ISFS_Read(fd, mac, 6);
+	ISFS_Close(fd);
+	ISFS_Deinitialize();
+	return (n == 6);
+}
+
+#define _swap(x, y) \
+	do { \
+		typeof(x) tmp = x; \
+		x = y; \
+		y = tmp; \
+	} while (0)
+
 s32 WPAD_Init()
 {
 	u32 level;
@@ -751,16 +775,29 @@ s32 WPAD_Init()
 		SYS_SetPeriodicAlarm(__wpad_timer,&tb,&tb,__wpad_timeouthandler,NULL);
 		__wpads_inited = WPAD_STATE_ENABLING;
 
-		ds4wiibt_initialize(&ds4, &ds4_addr);
-		ds4wiibt_set_userdata(&ds4, NULL);
-		ds4wiibt_set_disconnect_cb(&ds4, discon_cb_ds4);
-		ds4wiibt_listen(&ds4);
+		if (read_mac_config(ds4_conf_file, ds4_addr.addr)) {
+			//Swap mac...
+			_swap(ds4_addr.addr[0], ds4_addr.addr[5]);
+			_swap(ds4_addr.addr[1], ds4_addr.addr[4]);
+			_swap(ds4_addr.addr[2], ds4_addr.addr[3]);
 
-		ds3wiibt_initialize(&ds3, &ds3_addr);
-		ds3wiibt_set_userdata(&ds3, NULL);
-		ds3wiibt_set_disconnect_cb(&ds3, discon_cb_ds3);
-		ds3wiibt_listen(&ds3);
-		
+			ds4wiibt_initialize(&ds4, &ds4_addr);
+			ds4wiibt_set_userdata(&ds4, NULL);
+			ds4wiibt_set_disconnect_cb(&ds4, discon_cb_ds4);
+			ds4wiibt_listen(&ds4);
+		}
+
+		if (read_mac_config(ds3_conf_file, ds3_addr.addr)) {
+			//Swap mac...
+			_swap(ds3_addr.addr[0], ds3_addr.addr[5]);
+			_swap(ds3_addr.addr[1], ds3_addr.addr[4]);
+			_swap(ds3_addr.addr[2], ds3_addr.addr[3]);
+
+			ds3wiibt_initialize(&ds3, &ds3_addr);
+			ds3wiibt_set_userdata(&ds3, NULL);
+			ds3wiibt_set_disconnect_cb(&ds3, discon_cb_ds3);
+			ds3wiibt_listen(&ds3);
+		}
 	}
 	_CPU_ISR_Restore(level);
 	return WPAD_ERR_NONE;
@@ -1066,9 +1103,7 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 		}
 		last_R3_pressed = ds3.input.R3;
 		
-		if (ds3_ir_enabled) {
-			//wpaddata[chan].ir.x = (ds3.input.finger1.X/1920.0)*wpaddata[chan].ir.vres[0];
-			//wpaddata[chan].ir.y = (ds3.input.finger1.Y/900.0)*wpaddata[chan].ir.vres[1];
+		if (ds3_ir_enabled) {;
 			int8_t rX = ds3.input.rightX - 128;
 			int8_t rY = ds3.input.rightY - 128;
 			if (abs(rX) > DS3_DEADZONE) {
@@ -1076,7 +1111,7 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 				if (ds3_ir_x < 0.0) {
 					ds3_ir_x = 0.0;
 				} else if (ds3_ir_x > wpaddata[chan].ir.vres[0]) {
-					ds3_ir_x = wpaddata[chan].ir.vres[0];
+					//ds3_ir_x = wpaddata[chan].ir.vres[0];
 				}
 			}
 			if (abs(rY) > DS3_DEADZONE) {
@@ -1084,7 +1119,7 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 				if (ds3_ir_y < 0.0) {
 					ds3_ir_y = 0.0;
 				} else if (ds3_ir_y > wpaddata[chan].ir.vres[1]) {
-					ds3_ir_y = wpaddata[chan].ir.vres[1];
+					//ds3_ir_y = wpaddata[chan].ir.vres[1];
 				}
 			}
 			wpaddata[chan].ir.x = ds3_ir_x;

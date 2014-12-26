@@ -7,8 +7,8 @@
 #include "btpbuf.h"
 
 #undef LOG
-#define LOG printf
-//#define LOG(...) ((void)0)
+//#define LOG printf
+#define LOG(...) ((void)0)
 
 #define SDP_PSM 0x01
 
