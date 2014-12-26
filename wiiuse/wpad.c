@@ -871,6 +871,9 @@ s32 WPAD_Flush(s32 chan)
 	return ret;
 }
 
+static float ds3_ir_x = 50.0f, ds3_ir_y = 50.0f;
+static int ds3_ir_enabled = 0, last_R3_pressed = 0;
+
 s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 {
 	u32 btns_p = 0;
@@ -891,6 +894,7 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 	}
 
 	u32 ds4_btns = 0;
+	u32 ds3_btns = 0;
 
 	if (ds4wiibt_is_connected(&ds4)) {
 		
@@ -937,6 +941,45 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 			ds4_btns |= ds4.input.SHARE ? WPAD_CLASSIC_BUTTON_MINUS : 0;
 		}
 	}
+	if (ds3wiibt_is_connected(&ds3)) {
+		if ((wpaddata[chan].data_present & WPAD_DATA_EXPANSION) && (wpaddata[chan].exp.type == EXP_CLASSIC)) {
+			ds3_btns |= ds3.input.up    ? WPAD_CLASSIC_BUTTON_UP	  : 0;
+			ds3_btns |= ds3.input.down  ? WPAD_CLASSIC_BUTTON_DOWN  : 0;
+			ds3_btns |= ds3.input.right ? WPAD_CLASSIC_BUTTON_RIGHT : 0;
+			ds3_btns |= ds3.input.left  ? WPAD_CLASSIC_BUTTON_LEFT  : 0;
+
+			ds3_btns |= ds3.input.circle   ? WPAD_CLASSIC_BUTTON_A : 0;
+			ds3_btns |= ds3.input.cross    ? WPAD_CLASSIC_BUTTON_B : 0;
+			ds3_btns |= ds3.input.triangle ? WPAD_CLASSIC_BUTTON_X : 0;
+			ds3_btns |= ds3.input.square   ? WPAD_CLASSIC_BUTTON_Y : 0;
+
+			ds3_btns |= ds3.input.L1 ? WPAD_CLASSIC_BUTTON_FULL_L : 0;
+			ds3_btns |= ds3.input.R1 ? WPAD_CLASSIC_BUTTON_FULL_R : 0;
+			ds3_btns |= ds3.input.L2 ? WPAD_CLASSIC_BUTTON_ZL : 0;
+			ds3_btns |= ds3.input.R2 ? WPAD_CLASSIC_BUTTON_ZR : 0;
+
+			ds3_btns |= ds3.input.PS ? WPAD_CLASSIC_BUTTON_HOME : 0;
+			ds3_btns |= ds3.input.start ? WPAD_CLASSIC_BUTTON_PLUS : 0;
+			ds3_btns |= ds3.input.select ? WPAD_CLASSIC_BUTTON_MINUS : 0;
+		} else {
+			ds3_btns |= ds3.input.up    ? WPAD_BUTTON_UP	  : 0;
+			ds3_btns |= ds3.input.down  ? WPAD_BUTTON_DOWN  : 0;
+			ds3_btns |= ds3.input.right ? WPAD_BUTTON_RIGHT : 0;
+			ds3_btns |= ds3.input.left  ? WPAD_BUTTON_LEFT  : 0;
+
+			ds3_btns |= ds3.input.circle   ? WPAD_BUTTON_B : 0;
+			ds3_btns |= ds3.input.cross    ? WPAD_BUTTON_A : 0;
+			ds3_btns |= ds3.input.triangle ? WPAD_BUTTON_1 : 0;
+			ds3_btns |= ds3.input.square   ? WPAD_BUTTON_2 : 0;
+
+			ds3_btns |= (ds3.input.R1 || ds3.input.L1) ? WPAD_NUNCHUK_BUTTON_C : 0;
+			ds3_btns |= (ds3.input.R2 || ds3.input.L2) ? WPAD_NUNCHUK_BUTTON_Z : 0;
+
+			ds3_btns |= ds3.input.PS ? WPAD_BUTTON_HOME : 0;
+			ds3_btns |= ds3.input.start ? WPAD_CLASSIC_BUTTON_PLUS : 0;
+			ds3_btns |= ds3.input.select ? WPAD_CLASSIC_BUTTON_MINUS : 0;
+		}
+	}
 
 	btns_p = btns_nh = btns_l = wpaddata[chan].btns_h;
 	while(1) {
@@ -949,8 +992,7 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 		// own "fake" _l and everything gets recalculated at
 		// the end of the function
 		
-		btns_h = wpaddata[chan].btns_h;
-		btns_h |= ds4_btns;
+		btns_h = wpaddata[chan].btns_h | ds4_btns | ds3_btns;
 
 		/* Button event coalescing:
 		 * What we're doing here is get the very first button event
@@ -994,6 +1036,73 @@ s32 WPAD_ReadPending(s32 chan, WPADDataCallback datacb)
 		int8_t lY = ds4.input.leftY - 128;
 		int8_t rX = ds4.input.rightX - 128;
 		int8_t rY = ds4.input.rightY - 128;
+
+		float lMag = sqrtf(lX*lX + lY*lY)/128.0;
+		float rMag = sqrtf(rX*rX + rY*rY)/128.0;
+
+		float lAng = atan2(lY, lX)*RAD_TO_DEG + 90.0;
+		float rAng = atan2(rY, rX)*RAD_TO_DEG + 90.0;
+
+		if (wpaddata[chan].data_present & WPAD_DATA_EXPANSION) {
+			switch (wpaddata[chan].exp.type) {
+			case EXP_NUNCHUK:
+			case EXP_GUITAR_HERO_3:
+				wpaddata[chan].exp.nunchuk.js.mag = lMag;
+				wpaddata[chan].exp.nunchuk.js.ang = lAng;
+				break;
+			case EXP_CLASSIC:
+				wpaddata[chan].exp.classic.ljs.mag = lMag;
+				wpaddata[chan].exp.classic.ljs.ang = lAng;
+				wpaddata[chan].exp.classic.rjs.mag = rMag;
+				wpaddata[chan].exp.classic.rjs.ang = rAng;
+				break;
+				
+			}
+		}
+	}
+	if (ds3wiibt_is_connected(&ds3)) {
+		if (!last_R3_pressed && ds3.input.R3) {
+			ds3_ir_enabled ^= 1;
+		}
+		last_R3_pressed = ds3.input.R3;
+		
+		if (ds3_ir_enabled) {
+			//wpaddata[chan].ir.x = (ds3.input.finger1.X/1920.0)*wpaddata[chan].ir.vres[0];
+			//wpaddata[chan].ir.y = (ds3.input.finger1.Y/900.0)*wpaddata[chan].ir.vres[1];
+			int8_t rX = ds3.input.rightX - 128;
+			int8_t rY = ds3.input.rightY - 128;
+			if (abs(rX) > DS3_DEADZONE) {
+				ds3_ir_x += rX/75.0;
+				if (ds3_ir_x < 0.0) {
+					ds3_ir_x = 0.0;
+				} else if (ds3_ir_x > wpaddata[chan].ir.vres[0]) {
+					ds3_ir_x = wpaddata[chan].ir.vres[0];
+				}
+			}
+			if (abs(rY) > DS3_DEADZONE) {
+				ds3_ir_y += rY/75.0;
+				if (ds3_ir_y < 0.0) {
+					ds3_ir_y = 0.0;
+				} else if (ds3_ir_y > wpaddata[chan].ir.vres[1]) {
+					ds3_ir_y = wpaddata[chan].ir.vres[1];
+				}
+			}
+			wpaddata[chan].ir.x = ds3_ir_x;
+			wpaddata[chan].ir.y = ds3_ir_y;
+			wpaddata[chan].ir.valid = 1;
+		}
+		//wpaddata[chan].orient.pitch = ds3.input.pitch;
+		wpaddata[chan].orient.roll  = ds3.input.roll;
+		//wpaddata[chan].orient.yaw   = ds3.input.yaw;
+		
+		wpaddata[chan].accel.x = ds3.input.accelX;
+		wpaddata[chan].accel.y = ds3.input.accelY;
+		wpaddata[chan].accel.z = ds3.input.accelZ;
+
+		int8_t lX = ds3.input.leftX - 128;
+		int8_t lY = ds3.input.leftY - 128;
+		int8_t rX = ds3.input.rightX - 128;
+		int8_t rY = ds3.input.rightY - 128;
 
 		float lMag = sqrtf(lX*lX + lY*lY)/128.0;
 		float rMag = sqrtf(rX*rX + rY*rY)/128.0;
@@ -1247,6 +1356,7 @@ void WPAD_Shutdown()
 	_CPU_ISR_Disable(level);
 
 	ds4wiibt_disconnect(&ds4);
+	ds3wiibt_disconnect(&ds3);
 	
 	__wpads_inited = WPAD_STATE_DISABLED;
 	SYS_RemoveAlarm(__wpad_timer);

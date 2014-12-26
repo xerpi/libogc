@@ -836,7 +836,7 @@ void l2cap_input(struct pbuf *p, struct bd_addr *bdaddr)
 	}
 	if(inseg->p->tot_len < inseg->len) {
 		LOG("l2cap_input: Get continuing segments\n");
-		return; /* Get continuing segments */
+		//return; /* Get continuing segments */
 	}
 
 	/* Handle packet */
